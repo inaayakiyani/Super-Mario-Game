@@ -1,3 +1,4 @@
+
 org 100h
 jmp start
 
@@ -70,11 +71,228 @@ game_ticks dw 0
 
 key_pressed db 0
 key_scan_code db 0
+buffer_segment dw 0
+
+; Module 5 Variables
+
+test_x dw 50
+last_tick dw 0
 
 start:
+
+    ; Set up our own stack
+
+    cli
+    mov ax, cs
+    mov ss, ax
+    mov sp, stack_top
+    sti
+
+    ; Resize program memory block
+
+    mov bx, program_end
+    add bx, 15
+    shr bx, 1
+    shr bx, 1
+    shr bx, 1
+    shr bx, 1
+
+    mov ax, cs
+    mov es, ax
+    mov ah, 4Ah
+    int 21h
+
+    jc memory_error
+
+    ; Allocate 64 KB for frame buffer
+
+    mov bx, 1000h
+    mov ah, 48h
+    int 21h
+
+    jc memory_error
+    mov [buffer_segment], ax
+
+; Switch to VGA graphics mode
+
+    mov ax, 0013h
+    int 10h
+
+    ; Get initial BIOS timer tick
+
+    mov ah, 00h
+    int 1Ah
+    mov [last_tick], dx
+
+; Main frame loop
+
+moving_loop:
+
+    ; Wait for the next timer tick
+
+wait_tick:
+
+    mov ah, 00h
+    int 1Ah
+
+    cmp dx, [last_tick]
+    je wait_tick
+
+    mov [last_tick], dx
+
+    ; Draw the next frame
+
+    call ClearBuffer
+    call DrawTestRectangle
+    call CopyBuffer
+
+    ; Move rectangle to the right
+
+    inc word [test_x]
+
+    cmp word [test_x], 270
+    jbe moving_loop
+
+; Return to text mode
 
     mov ax, 0003h
     int 10h
 
+    ; Display success message
+
+    mov dx, allocation_success
+    mov ah, 09h
+    int 21h
+
     mov ax, 4C00h
     int 21h
+
+memory_error:
+
+    mov dx, allocation_failed
+    mov ah, 09h
+    int 21h
+
+    mov ax, 4C01h
+    int 21h
+
+; ==========================================
+; CopyBuffer
+; Copies the complete frame buffer to VGA memory.
+; ==========================================
+
+CopyBuffer:
+
+    push ax
+    push cx
+    push si
+    push di
+    push ds
+    push es
+
+    mov ax, [buffer_segment]
+    mov ds, ax
+
+    mov ax, 0A000h
+    mov es, ax
+
+    xor si, si
+    xor di, di
+    mov cx, 32000
+
+    cld
+    rep movsw
+
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop cx
+    pop ax
+
+    ret
+
+; ==========================================
+; ClearBuffer
+; Clears the complete frame buffer using REP STOSW.
+; ==========================================
+
+ClearBuffer:
+
+    push ax
+    push cx
+    push di
+    push es
+
+    mov ax, [buffer_segment]
+    mov es, ax
+
+    xor di, di
+    xor ax, ax
+    mov cx, 32000
+
+    cld
+    rep stosw
+
+    pop es
+    pop di
+    pop cx
+    pop ax
+
+    ret
+
+; ==========================================
+; DrawTestRectangle
+; Draws a red rectangle into the frame buffer.
+; ==========================================
+
+DrawTestRectangle:
+
+    push ax
+    push cx
+    push dx
+    push di
+    push es
+
+    mov ax, [buffer_segment]
+    mov es, ax
+
+    cld
+
+    ; Starting position: X=test_x, Y=50
+
+    mov di, 16000
+    add di, [test_x]
+
+    ; Red colour
+
+    mov al, COLOR_RED
+
+    ; Draw 30 rows
+
+    mov dx, 30
+
+draw_row:
+
+    mov cx, 40
+    rep stosb
+
+    add di, 280
+
+    dec dx
+    jnz draw_row
+
+    pop es
+    pop di
+    pop dx
+    pop cx
+    pop ax
+
+    ret
+
+allocation_success db 'Frame buffer allocated successfully!$'
+allocation_failed db 'Memory allocation failed!$'
+
+stack_space times 256 db 0
+stack_top:
+program_end:
