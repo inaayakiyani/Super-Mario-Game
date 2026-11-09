@@ -2,7 +2,7 @@
 org 100h
 jmp start
 
-;Display Constants
+; Display Constants
 
 SCREEN_WIDTH equ 320
 SCREEN_HEIGHT equ 200
@@ -13,7 +13,7 @@ VISIBLE_COLUMNS equ 20
 VISIBLE_ROWS equ 12
 TRANSPARENT_COLOR equ 0
 
-;Keyboard Scan Codes
+; Keyboard Scan Codes
 
 KEY_LEFT equ 4Bh
 KEY_RIGHT equ 4Dh
@@ -25,7 +25,7 @@ KEY_PAUSE equ 19h
 KEY_ENTER equ 1Ch
 KEY_ESC equ 01h
 
-;Game Limits
+; Game Limits
 
 START_LIVES equ 3
 MAX_LIVES equ 99
@@ -66,6 +66,10 @@ coins dw 0
 
 game_time dw LEVEL_TIME
 game_ticks dw 0
+clock_fraction dw 0
+
+old_int1c:
+    dw 0, 0
 
 ; Keyboard Variables
 
@@ -102,7 +106,10 @@ start:
     mov ah, 4Ah
     int 21h
 
-    jc memory_error
+    jnc resize_success
+    jmp memory_error
+
+resize_success:
 
     ; Allocate 64 KB for frame buffer
 
@@ -110,19 +117,41 @@ start:
     mov ah, 48h
     int 21h
 
-    jc memory_error
+    jnc buffer_allocated
+    jmp memory_error
+
+buffer_allocated:
+
     mov [buffer_segment], ax
 
-; Switch to VGA graphics mode
+    ; Save the original INT 1Ch handler
+
+    mov ah, 35h
+    mov al, 1Ch
+    int 21h
+
+    mov [old_int1c], bx
+    mov [old_int1c+2], es
+
+    ; Install our new INT 1Ch handler
+
+    push cs
+    pop ds
+
+    mov dx, TimerHandler
+    mov ax, 251Ch
+    int 21h
+
+    ; Switch to VGA graphics mode
 
     mov ax, 0013h
     int 10h
 
-    ; Get initial BIOS timer tick
+    ; Get initial game timer tick
 
-    mov ah, 00h
-    int 1Ah
-    mov [last_tick], dx
+    mov ax, [game_ticks]
+    mov [last_tick], ax
+
 
 ; Main frame loop
 
@@ -132,13 +161,44 @@ moving_loop:
 
 wait_tick:
 
-    mov ah, 00h
-    int 1Ah
+    ; Get the current timer tick count
 
-    cmp dx, [last_tick]
+    mov ax, [game_ticks]
+    mov bx, ax
+
+    ; Calculate how many ticks have passed
+
+    sub ax, [last_tick]
+    mov [last_tick], bx
+
+    ; If no tick passed, keep waiting
+
+    cmp ax, 0
     je wait_tick
 
-    mov [last_tick], dx
+    ; Process all elapsed ticks
+
+    mov cx, ax
+
+update_clock:
+
+    add word [clock_fraction], 10
+
+    cmp word [clock_fraction], 182
+    jb next_tick
+
+    sub word [clock_fraction], 182
+
+    ; Prevent game time from going below zero
+
+    cmp word [game_time], 0
+    je next_tick
+
+    dec word [game_time]
+
+next_tick:
+
+    loop update_clock
 
     ; Draw the next frame
 
@@ -153,10 +213,24 @@ wait_tick:
     cmp word [test_x], 270
     jbe moving_loop
 
+
 ; Return to text mode
 
     mov ax, 0003h
     int 10h
+
+    ; Restore the original INT 1Ch handler
+
+    push ds
+
+    mov dx, [old_int1c]
+    mov ax, [old_int1c+2]
+    mov ds, ax
+
+    mov ax, 251Ch
+    int 21h
+
+    pop ds
 
     ; Display success message
 
@@ -167,6 +241,7 @@ wait_tick:
     mov ax, 4C00h
     int 21h
 
+
 memory_error:
 
     mov dx, allocation_failed
@@ -175,6 +250,25 @@ memory_error:
 
     mov ax, 4C01h
     int 21h
+
+
+; ==========================================
+; TimerHandler
+; Counts every timer interrupt.
+; ==========================================
+
+TimerHandler:
+
+    pushf
+    push ax
+
+    inc word [cs:game_ticks]
+
+    pop ax
+    popf
+
+    jmp far [cs:old_int1c]
+
 
 ; ==========================================
 ; CopyBuffer
@@ -212,6 +306,7 @@ CopyBuffer:
 
     ret
 
+
 ; ==========================================
 ; ClearBuffer
 ; Clears the complete frame buffer using REP STOSW.
@@ -240,6 +335,7 @@ ClearBuffer:
     pop ax
 
     ret
+
 
 ; ==========================================
 ; DrawTestRectangle
@@ -289,6 +385,7 @@ draw_row:
     pop ax
 
     ret
+
 
 allocation_success db 'Frame buffer allocated successfully!$'
 allocation_failed db 'Memory allocation failed!$'
