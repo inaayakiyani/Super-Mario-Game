@@ -82,6 +82,17 @@ buffer_segment dw 0
 test_x dw 50
 last_tick dw 0
 
+; Timer Display Variables
+
+digit_hundreds db 0
+digit_tens db 0
+digit_ones db 0
+
+glyph_index db 0
+glyph_x dw 0
+glyph_y dw 0
+glyph_pattern db 0
+
 start:
 
     ; Set up our own stack
@@ -161,8 +172,6 @@ moving_loop:
 
 wait_tick:
 
-    ; Get the current timer tick count
-
     mov ax, [game_ticks]
     mov bx, ax
 
@@ -200,10 +209,31 @@ next_tick:
 
     loop update_clock
 
+    ; Check if the timer has reached zero
+
+    cmp word [game_time], 0
+    je exit_game
+
+    ; Check for ESC key
+
+    mov ah, 01h
+    int 16h
+
+    jz no_key
+
+    mov ah, 00h
+    int 16h
+
+    cmp ah, KEY_ESC
+    je exit_game
+
+no_key:
+
     ; Draw the next frame
 
     call ClearBuffer
     call DrawTestRectangle
+    call DrawTimer
     call CopyBuffer
 
     ; Move rectangle to the right
@@ -213,8 +243,18 @@ next_tick:
     cmp word [test_x], 270
     jbe moving_loop
 
+    ; Reset rectangle position
 
-; Return to text mode
+    mov word [test_x], 50
+
+    jmp moving_loop
+
+
+; Exit game
+
+exit_game:
+
+    ; Return to text mode
 
     mov ax, 0003h
     int 10h
@@ -232,9 +272,9 @@ next_tick:
 
     pop ds
 
-    ; Display success message
+    ; Display exit message
 
-    mov dx, allocation_success
+    mov dx, exit_message
     mov ah, 09h
     int 21h
 
@@ -268,6 +308,182 @@ TimerHandler:
     popf
 
     jmp far [cs:old_int1c]
+
+
+; ==========================================
+; DrawTimer
+; Converts game_time into three digits.
+; Displays TIME and the remaining seconds.
+; ==========================================
+
+DrawTimer:
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    ; Get hundreds digit
+
+    mov ax, [game_time]
+    xor dx, dx
+    mov bx, 100
+    div bx
+
+    mov [digit_hundreds], al
+
+    ; Get tens and ones digits
+
+    mov ax, dx
+    xor dx, dx
+    mov bx, 10
+    div bx
+
+    mov [digit_tens], al
+    mov [digit_ones], dl
+
+    ; Draw TIME
+
+    mov al, 10
+    mov bx, 110
+    mov dx, 10
+    call DrawGlyph
+
+    mov al, 11
+    mov bx, 118
+    mov dx, 10
+    call DrawGlyph
+
+    mov al, 12
+    mov bx, 126
+    mov dx, 10
+    call DrawGlyph
+
+    mov al, 13
+    mov bx, 134
+    mov dx, 10
+    call DrawGlyph
+
+    ; Draw hundreds digit
+
+    mov al, [digit_hundreds]
+    mov bx, 158
+    mov dx, 10
+    call DrawGlyph
+
+    ; Draw tens digit
+
+    mov al, [digit_tens]
+    mov bx, 166
+    mov dx, 10
+    call DrawGlyph
+
+    ; Draw ones digit
+
+    mov al, [digit_ones]
+    mov bx, 174
+    mov dx, 10
+    call DrawGlyph
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    ret
+
+
+; ==========================================
+; DrawGlyph
+; Draws one 5x7 bitmap character.
+; AL = character index
+; BX = X position
+; DX = Y position
+; ==========================================
+
+DrawGlyph:
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    push es
+
+    mov [glyph_index], al
+    mov [glyph_x], bx
+    mov [glyph_y], dx
+
+    ; Calculate font offset
+
+    xor ax, ax
+    mov al, [glyph_index]
+    mov bl, 7
+    mul bl
+
+    mov si, ax
+
+    ; Set framebuffer segment
+
+    mov ax, [buffer_segment]
+    mov es, ax
+
+    ; Calculate starting pixel position
+    ; Offset = Y * 320 + X
+
+    mov ax, [glyph_y]
+    mov bx, 320
+    mul bx
+
+    add ax, [glyph_x]
+    mov di, ax
+
+    ; Draw seven rows
+
+    mov bp, 7
+
+glyph_row:
+
+    mov al, [glyph_font + si]
+    mov [glyph_pattern], al
+
+    mov bl, 10h
+    mov cx, 5
+
+glyph_column:
+
+    test byte [glyph_pattern], bl
+    jz skip_pixel
+
+    mov byte [es:di], COLOR_WHITE
+
+skip_pixel:
+
+    inc di
+    shr bl, 1
+
+    loop glyph_column
+
+    ; Move to the next row
+
+    add di, 315
+    inc si
+
+    dec bp
+    jnz glyph_row
+
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    ret
 
 
 ; ==========================================
@@ -387,7 +603,58 @@ draw_row:
     ret
 
 
-allocation_success db 'Frame buffer allocated successfully!$'
+; ==========================================
+; Bitmap Font
+; First 10 characters: digits 0-9
+; Next 4 characters: T, I, M, E
+; ==========================================
+
+glyph_font:
+
+    ; 0
+    db 11110b,10001b,10011b,10101b,11001b,10001b,01110b
+
+    ; 1
+    db 00100b,01100b,00100b,00100b,00100b,00100b,01110b
+
+    ; 2
+    db 01110b,10001b,00001b,00010b,00100b,01000b,11111b
+
+    ; 3
+    db 11110b,00001b,00001b,01110b,00001b,00001b,11110b
+
+    ; 4
+    db 00010b,00110b,01010b,10010b,11111b,00010b,00010b
+
+    ; 5
+    db 11111b,10000b,10000b,11110b,00001b,00001b,11110b
+
+    ; 6
+    db 01110b,10000b,10000b,11110b,10001b,10001b,01110b
+
+    ; 7
+    db 11111b,00001b,00010b,00100b,01000b,01000b,01000b
+
+    ; 8
+    db 01110b,10001b,10001b,01110b,10001b,10001b,01110b
+
+    ; 9
+    db 01110b,10001b,10001b,01111b,00001b,00001b,01110b
+
+    ; T
+    db 11111b,00100b,00100b,00100b,00100b,00100b,00100b
+
+    ; I
+    db 01110b,00100b,00100b,00100b,00100b,00100b,01110b
+
+    ; M
+    db 10001b,11011b,10101b,10101b,10001b,10001b,10001b
+
+    ; E
+    db 11111b,10000b,10000b,11110b,10000b,10000b,11111b
+
+
+exit_message db 'Game timer test ended successfully!$'
 allocation_failed db 'Memory allocation failed!$'
 
 stack_space times 256 db 0
