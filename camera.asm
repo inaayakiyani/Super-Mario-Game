@@ -1,0 +1,5 @@
+UpdateCamera:
+    ret
+
+ResetCamera:
+    ret

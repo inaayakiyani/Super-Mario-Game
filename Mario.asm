@@ -44,6 +44,23 @@ COLOR_RED equ 4
 COLOR_BROWN equ 6
 COLOR_WHITE equ 15
 
+VIDEO_SEGMENT       equ 0A000h
+
+COLOR_LIGHT_BLUE    equ 9
+COLOR_LIGHT_GREEN   equ 10
+COLOR_LIGHT_RED     equ 12
+COLOR_YELLOW        equ 14
+
+COLOR_SKY           equ COLOR_LIGHT_BLUE
+COLOR_GROUND        equ COLOR_GREEN
+COLOR_BRICK         equ COLOR_RED
+COLOR_PIPE          equ COLOR_LIGHT_GREEN
+COLOR_HERO          equ COLOR_LIGHT_RED
+COLOR_ENEMY         equ COLOR_BROWN
+COLOR_TEXT          equ COLOR_WHITE
+COLOR_HUD           equ COLOR_BLACK
+COLOR_COIN          equ COLOR_YELLOW
+
 ; Hero Variables
 
 hero_x dw 32
@@ -71,12 +88,20 @@ game_ticks dw 0
 
 key_pressed db 0
 key_scan_code db 0
-buffer_segment dw 0
-
-; Module 5 Variables
-
-test_x dw 50
-last_tick dw 0
+%include "video.asm"
+%include "tiles.asm"
+%include "sprites.asm"
+%include "framebuf.asm"
+%include "camera.asm"
+%include "keyboard.asm"
+%include "timer.asm"
+%include "physics.asm"
+%include "collide.asm"
+%include "enemies.asm"
+%include "blocks.asm"
+%include "hud.asm"
+%include "states.asm"
+%include "game.asm"
 
 start:
 
