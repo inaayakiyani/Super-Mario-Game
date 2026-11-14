@@ -70,6 +70,20 @@ game_ticks dw 0
 
 key_pressed db 0
 key_scan_code db 0
+%include "video.asm"
+%include "tiles.asm"
+%include "sprites.asm"
+%include "framebuf.asm"
+%include "camera.asm"
+%include "keyboard.asm"
+%include "timer.asm"
+%include "physics.asm"
+%include "collide.asm"
+%include "enemies.asm"
+%include "blocks.asm"
+%include "hud.asm"
+%include "states.asm"
+%include "game.asm"
 
 start:
 
